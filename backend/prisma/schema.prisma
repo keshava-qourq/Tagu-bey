@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Sex {
+  male
+  female
+  other
+}
+
+enum ActivityLevel {
+  sedentary
+  light
+  moderate
+  active
+  very_active
+}
+
+enum GoalType {
+  lose
+  maintain
+  gain
+}
+
+enum MealType {
+  breakfast
+  lunch
+  dinner
+  snack
+}
+
+enum FoodSource {
+  user
+  seed
+}
+
+model User {
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  passwordHash        String
+  name                String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Onboarding / profile
+  dateOfBirth         DateTime?
+  sex                 Sex?
+  heightCm            Float?
+  currentWeightKg     Float?
+  activityLevel       ActivityLevel?
+  goalType            GoalType?
+  goalRateKgPerWeek   Float?
+  onboardingComplete  Boolean  @default(false)
+
+  // Computed / editable goals
+  bmr                 Float?
+  tdee                Float?
+  dailyCalorieGoal    Float?
+  proteinGoalG        Float?
+  carbsGoalG           Float?
+  fatGoalG            Float?
+
+  foodItems           FoodItem[]
+  logEntries          LogEntry[]
+  weightLogs          WeightLog[]
+}
+
+model FoodItem {
+  id                   String     @id @default(cuid())
+  name                 String
+  brand                String?
+  createdByUserId      String?
+  createdByUser        User?      @relation(fields: [createdByUserId], references: [id])
+  source               FoodSource @default(user)
+
+  servingSize          Float
+  servingUnit          String
+  caloriesPerServing   Float
+  proteinG             Float
+  carbsG               Float
+  fatG                 Float
+  fiberG               Float?
+  sugarG               Float?
+  sodiumMg             Float?
+
+  createdAt            DateTime   @default(now())
+
+  logEntries           LogEntry[]
+
+  @@index([name])
+}
+
+model LogEntry {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItemId   String
+  foodItem     FoodItem @relation(fields: [foodItemId], references: [id])
+
+  logDate      String   // stored as YYYY-MM-DD for simple grouping/filtering
+  mealType     MealType
+  quantity     Float    // multiplier against the food item's serving
+
+  // Snapshot of macros at time of logging
+  calories     Float
+  proteinG     Float
+  carbsG       Float
+  fatG         Float
+
+  loggedAt     DateTime @default(now())
+
+  @@index([userId, logDate])
+}
+
+model WeightLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weightKg  Float
+  logDate   String   // YYYY-MM-DD
+
+  @@unique([userId, logDate])
+}

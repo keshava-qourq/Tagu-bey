@@ -12,11 +12,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/*
+  This app's UI is a hardcoded light theme (bg-white cards, text-neutral-900,
+  etc.) with no dark: variants anywhere. Letting color-scheme follow the OS
+  here would recolor text (including form inputs) against backgrounds that
+  never change, making it unreadable/invisible in dark mode.
+*/
+:root {
+  color-scheme: light;
 }
 
 body {
