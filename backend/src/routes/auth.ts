@@ -11,13 +11,14 @@ const isProduction = process.env.NODE_ENV === "production";
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: isProduction,
-  // Frontend and backend are separate Render services on different
-  // *.onrender.com subdomains, which are cross-site to each other (Render's
-  // default domains are on the public suffix list). A "lax" cookie is never
-  // sent on cross-site fetch/XHR, only on top-level navigation - so it would
-  // silently break login here. "none" (paired with secure, which HTTPS on
-  // Render satisfies) is required for the frontend's cross-origin fetch
-  // calls to actually carry the auth cookie.
+  // Frontend and backend deploy as separate services on different
+  // subdomains (e.g. Render's *.onrender.com, or two Elastic Beanstalk
+  // environment URLs), which count as cross-site to each other when the
+  // shared parent domain is a multi-tenant platform domain. A "lax" cookie
+  // is never sent on cross-site fetch/XHR, only on top-level navigation -
+  // so it would silently break login here. "none" (paired with secure,
+  // which HTTPS in production satisfies) is required for the frontend's
+  // cross-origin fetch calls to actually carry the auth cookie.
   sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   path: "/",
