@@ -13,6 +13,7 @@ import {
   calculateTDEE,
 } from "@/lib/calculations";
 import { api, ApiError } from "@/lib/api";
+import { AuthShell } from "@/components/auth/auth-shell";
 
 const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
   { value: "sedentary", label: "Sedentary (little to no exercise)" },
@@ -21,6 +22,10 @@ const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
   { value: "active", label: "Active (6-7 days/week)" },
   { value: "very_active", label: "Very active (physical job or 2x/day training)" },
 ];
+
+const inputClass =
+  "mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white focus:border-lime-400 focus:outline-none focus:ring-1 focus:ring-lime-400";
+const selectClass = inputClass + " [&>option]:text-black";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -101,190 +106,170 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
-        {step === 1 ? (
+    <AuthShell
+      wide
+      title={step === 1 ? "Tell us about you" : "Your goals"}
+      subtitle={
+        step === 1
+          ? "We'll use this to calculate your calorie and macro goals."
+          : "Based on the Mifflin-St Jeor equation. You can fine-tune these later in settings."
+      }
+    >
+      {step === 1 ? (
+        <form onSubmit={handleContinue} className="mt-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-white/70">Date of birth</label>
+            <input
+              type="date"
+              required
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/70">Sex</label>
+            <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={selectClass}>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-white/70">Height (cm)</label>
+              <input
+                type="number"
+                required
+                min={50}
+                max={272}
+                value={heightCm}
+                onChange={(e) => setHeightCm(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-white/70">Weight (kg)</label>
+              <input
+                type="number"
+                required
+                min={20}
+                max={400}
+                value={weightKg}
+                onChange={(e) => setWeightKg(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/70">Activity level</label>
+            <select
+              value={activityLevel}
+              onChange={(e) => setActivityLevel(e.target.value as ActivityLevel)}
+              className={selectClass}
+            >
+              {ACTIVITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/70">Goal</label>
+            <select value={goalType} onChange={(e) => setGoalType(e.target.value as GoalType)} className={selectClass}>
+              <option value="lose">Lose weight</option>
+              <option value="maintain">Maintain weight</option>
+              <option value="gain">Gain weight</option>
+            </select>
+          </div>
+
+          {goalType !== "maintain" && (
+            <div>
+              <label className="block text-sm font-medium text-white/70">Target rate (kg/week)</label>
+              <input
+                type="number"
+                step="0.1"
+                min={0.1}
+                max={1.5}
+                required
+                value={goalRate}
+                onChange={(e) => setGoalRate(e.target.value)}
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-white/30">A safe range is typically 0.25–1 kg/week</p>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-red-400">{error}</p>}
+
+          <button
+            type="submit"
+            className="btn-glow w-full rounded-xl bg-gradient-to-r from-lime-400 to-emerald-500 py-2.5 text-sm font-semibold text-black transition hover:brightness-105"
+          >
+            Calculate my goals
+          </button>
+        </form>
+      ) : (
+        preview && (
           <>
-            <h1 className="text-2xl font-semibold text-neutral-900">Tell us about you</h1>
-            <p className="mt-1 text-sm text-neutral-500">
-              We&apos;ll use this to calculate your calorie and macro goals.
-            </p>
-
-            <form onSubmit={handleContinue} className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700">Date of birth</label>
-                <input
-                  type="date"
-                  required
-                  value={dateOfBirth}
-                  onChange={(e) => setDateOfBirth(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-neutral-700">Sex</label>
-                <select
-                  value={sex}
-                  onChange={(e) => setSex(e.target.value as Sex)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                >
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700">Height (cm)</label>
-                  <input
-                    type="number"
-                    required
-                    min={50}
-                    max={272}
-                    value={heightCm}
-                    onChange={(e) => setHeightCm(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                  />
+            <div className="mt-6 space-y-3">
+              <div className="rounded-2xl bg-white/5 p-4">
+                <div className="flex justify-between text-sm text-white/50">
+                  <span>BMR</span>
+                  <span className="text-white/80">{preview.bmr} kcal/day</span>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700">Weight (kg)</label>
-                  <input
-                    type="number"
-                    required
-                    min={20}
-                    max={400}
-                    value={weightKg}
-                    onChange={(e) => setWeightKg(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                  />
+                <div className="mt-1 flex justify-between text-sm text-white/50">
+                  <span>TDEE</span>
+                  <span className="text-white/80">{preview.tdee} kcal/day</span>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-neutral-700">Activity level</label>
-                <select
-                  value={activityLevel}
-                  onChange={(e) => setActivityLevel(e.target.value as ActivityLevel)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                >
-                  {ACTIVITY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="panel-dark rounded-2xl border border-lime-400/30 p-4 text-center">
+                <p className="text-sm text-lime-300">Daily calorie goal</p>
+                <p className="text-3xl font-extrabold text-white">{preview.dailyCalorieGoal} kcal</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-neutral-700">Goal</label>
-                <select
-                  value={goalType}
-                  onChange={(e) => setGoalType(e.target.value as GoalType)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                >
-                  <option value="lose">Lose weight</option>
-                  <option value="maintain">Maintain weight</option>
-                  <option value="gain">Gain weight</option>
-                </select>
-              </div>
-
-              {goalType !== "maintain" && (
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700">
-                    Target rate (kg/week)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0.1}
-                    max={1.5}
-                    required
-                    value={goalRate}
-                    onChange={(e) => setGoalRate(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                  />
-                  <p className="mt-1 text-xs text-neutral-400">
-                    A safe range is typically 0.25–1 kg/week
-                  </p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-white/40">Protein</p>
+                  <p className="font-semibold text-white">{preview.proteinGoalG}g</p>
                 </div>
-              )}
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-white/40">Carbs</p>
+                  <p className="font-semibold text-white">{preview.carbsGoalG}g</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-white/40">Fat</p>
+                  <p className="font-semibold text-white">{preview.fatGoalG}g</p>
+                </div>
+              </div>
+            </div>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
 
+            <div className="mt-6 flex gap-3">
               <button
-                type="submit"
-                className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+                onClick={() => setStep(1)}
+                className="flex-1 rounded-xl border border-white/15 py-2.5 text-sm font-medium text-white/70 hover:bg-white/5"
               >
-                Calculate my goals
+                Back
               </button>
-            </form>
+              <button
+                onClick={handleConfirm}
+                disabled={loading}
+                className="btn-glow flex-1 rounded-xl bg-gradient-to-r from-lime-400 to-emerald-500 py-2.5 text-sm font-semibold text-black hover:brightness-105 disabled:opacity-60"
+              >
+                {loading ? "Saving..." : "Confirm & continue"}
+              </button>
+            </div>
           </>
-        ) : (
-          preview && (
-            <>
-              <h1 className="text-2xl font-semibold text-neutral-900">Your goals</h1>
-              <p className="mt-1 text-sm text-neutral-500">
-                Based on the Mifflin-St Jeor equation. You can fine-tune these later in settings.
-              </p>
-
-              <div className="mt-6 space-y-3">
-                <div className="rounded-xl bg-neutral-50 p-4">
-                  <div className="flex justify-between text-sm text-neutral-500">
-                    <span>BMR</span>
-                    <span>{preview.bmr} kcal/day</span>
-                  </div>
-                  <div className="mt-1 flex justify-between text-sm text-neutral-500">
-                    <span>TDEE</span>
-                    <span>{preview.tdee} kcal/day</span>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50 p-4 text-center">
-                  <p className="text-sm text-emerald-700">Daily calorie goal</p>
-                  <p className="text-3xl font-bold text-emerald-700">
-                    {preview.dailyCalorieGoal} kcal
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg bg-neutral-50 p-3">
-                    <p className="text-xs text-neutral-500">Protein</p>
-                    <p className="font-semibold text-neutral-900">{preview.proteinGoalG}g</p>
-                  </div>
-                  <div className="rounded-lg bg-neutral-50 p-3">
-                    <p className="text-xs text-neutral-500">Carbs</p>
-                    <p className="font-semibold text-neutral-900">{preview.carbsGoalG}g</p>
-                  </div>
-                  <div className="rounded-lg bg-neutral-50 p-3">
-                    <p className="text-xs text-neutral-500">Fat</p>
-                    <p className="font-semibold text-neutral-900">{preview.fatGoalG}g</p>
-                  </div>
-                </div>
-              </div>
-
-              {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
-
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => setStep(1)}
-                  className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleConfirm}
-                  disabled={loading}
-                  className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  {loading ? "Saving..." : "Confirm & continue"}
-                </button>
-              </div>
-            </>
-          )
-        )}
-      </div>
-    </div>
+        )
+      )}
+    </AuthShell>
   );
 }

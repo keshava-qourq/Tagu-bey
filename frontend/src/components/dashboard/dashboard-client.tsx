@@ -3,15 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Goals, LogEntry, MealType } from "@/types";
-import { AddFoodModal } from "@/components/dashboard/add-food-modal";
+import { LogFoodSheet } from "@/components/log-food/log-food-sheet";
+import { BottomNav } from "@/components/nav/bottom-nav";
+import { ProgressRing } from "@/components/ui/progress-ring";
 import { todayDateString } from "@/lib/calculations";
 import { api } from "@/lib/api";
 
-const MEALS: { type: MealType; label: string }[] = [
-  { type: "breakfast", label: "Breakfast" },
-  { type: "lunch", label: "Lunch" },
-  { type: "dinner", label: "Dinner" },
-  { type: "snack", label: "Snacks" },
+const MEALS: { type: MealType; label: string; emoji: string }[] = [
+  { type: "breakfast", label: "Breakfast", emoji: "🌅" },
+  { type: "lunch", label: "Lunch", emoji: "☀️" },
+  { type: "dinner", label: "Dinner", emoji: "🌙" },
+  { type: "snack", label: "Snacks", emoji: "🍎" },
 ];
 
 function formatDateLabel(dateStr: string): string {
@@ -46,24 +48,86 @@ export function DashboardClient({
   const router = useRouter();
   const [date, setDate] = useState(initialDate);
   const [entries, setEntries] = useState<LogEntry[]>(initialEntries);
-  const [loading, setLoading] = useState(false);
-  const [activeMeal, setActiveMeal] = useState<MealType | null>(null);
+  const [showLogSheet, setShowLogSheet] = useState(false);
+  const [defaultMeal, setDefaultMeal] = useState<MealType>("breakfast");
+  const [insight, setInsight] = useState<string | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
 
   useEffect(() => {
     if (date === initialDate) return;
     let cancelled = false;
-    setLoading(true);
-    api
-      .get<LogEntry[]>(`/api/log-entries?date=${date}`)
-      .then((data) => {
-        if (!cancelled) setEntries(data);
-      })
-      .finally(() => !cancelled && setLoading(false));
+    api.get<LogEntry[]>(`/api/log-entries?date=${date}`).then((data) => {
+      if (!cancelled) setEntries(data);
+    });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
+
+  // Gemini insight is fetched once per date (not on every log change) and
+  // cached in localStorage, since free-tier Gemini quota is small (as low
+  // as 20 requests/day) and refetching on every meal add burns through it fast.
+  useEffect(() => {
+    let cancelled = false;
+    const cacheKey = `insight:${date}`;
+
+    let cached: string | null = null;
+    try {
+      cached = localStorage.getItem(cacheKey);
+    } catch {
+      // localStorage unavailable (private mode, etc.) - just skip the cache
+    }
+
+    if (cached) {
+      const cachedInsight = cached;
+      Promise.resolve().then(() => {
+        if (!cancelled) setInsight(cachedInsight);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    api
+      .get<{ insight: string }>(`/api/ai/insight?date=${date}`)
+      .then((res) => {
+        if (cancelled) return;
+        setInsight(res.insight);
+        try {
+          localStorage.setItem(cacheKey, res.insight);
+        } catch {
+          // ignore storage failures
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setInsight(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
+  function refreshInsight() {
+    try {
+      localStorage.removeItem(`insight:${date}`);
+    } catch {
+      // ignore
+    }
+    setInsightLoading(true);
+    api
+      .get<{ insight: string }>(`/api/ai/insight?date=${date}`)
+      .then((res) => {
+        setInsight(res.insight);
+        try {
+          localStorage.setItem(`insight:${date}`, res.insight);
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => setInsight(null))
+      .finally(() => setInsightLoading(false));
+  }
 
   const totals = useMemo(() => {
     return entries.reduce(
@@ -78,16 +142,15 @@ export function DashboardClient({
   }, [entries]);
 
   const remaining = Math.round(goals.dailyCalorieGoal - totals.calories);
-  const caloriePct = Math.min(100, (totals.calories / (goals.dailyCalorieGoal || 1)) * 100);
+  const caloriePct = (totals.calories / (goals.dailyCalorieGoal || 1)) * 100;
 
   async function handleDelete(id: string) {
     setEntries((prev) => prev.filter((e) => e.id !== id));
     await api.delete(`/api/log-entries/${id}`);
   }
 
-  function handleAdded(entry: LogEntry) {
-    setEntries((prev) => [...prev, entry]);
-    setActiveMeal(null);
+  function handleAdded(newEntries: LogEntry[]) {
+    setEntries((prev) => [...prev, ...newEntries]);
   }
 
   async function handleSignOut() {
@@ -96,37 +159,49 @@ export function DashboardClient({
     router.refresh();
   }
 
+  function openLogSheet(meal?: MealType) {
+    setDefaultMeal(meal ?? "breakfast");
+    setShowLogSheet(true);
+  }
+
   const isToday = date === todayDateString();
+  const initial = userName.trim().charAt(0).toUpperCase() || "?";
 
   return (
-    <div className="min-h-screen bg-neutral-50 pb-16">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4">
-          <div>
-            <p className="text-lg font-semibold text-neutral-900">CalorieTrack</p>
-            <p className="text-sm text-neutral-500">Hi, {userName}</p>
+    <div className="min-h-screen bg-neutral-50 pb-32">
+      <header className="bg-neutral-50">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-5 pb-2 pt-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-lime-400 to-emerald-500 text-sm font-bold text-black">
+              {initial}
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">Hi, {userName.split(" ")[0]}</p>
+              <p className="text-xl font-bold tracking-tight text-neutral-900">
+                Calorie<span className="text-gradient-lime">Track</span>
+              </p>
+            </div>
           </div>
           <button
             onClick={handleSignOut}
-            className="text-sm font-medium text-neutral-500 hover:text-neutral-800"
+            className="rounded-full px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
           >
             Sign out
           </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 py-6">
-        {/* Date navigation */}
+      <main className="mx-auto max-w-2xl px-4 py-3">
         <div className="mb-4 flex items-center justify-between">
           <button
             onClick={() => setDate((d) => shiftDate(d, -1))}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100"
+            className="rounded-full p-2 text-neutral-500 transition hover:bg-neutral-200/60 active:scale-95"
             aria-label="Previous day"
           >
             ←
           </button>
           <div className="text-center">
-            <p className="font-medium text-neutral-900">{formatDateLabel(date)}</p>
+            <p className="font-semibold text-neutral-900">{formatDateLabel(date)}</p>
             {!isToday && (
               <button
                 onClick={() => setDate(todayDateString())}
@@ -138,7 +213,7 @@ export function DashboardClient({
           </div>
           <button
             onClick={() => setDate((d) => shiftDate(d, 1))}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100"
+            className="rounded-full p-2 text-neutral-500 transition hover:bg-neutral-200/60 active:scale-95 disabled:opacity-30"
             aria-label="Next day"
             disabled={isToday}
           >
@@ -146,49 +221,83 @@ export function DashboardClient({
           </button>
         </div>
 
-        {/* Calorie summary */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="flex items-baseline justify-between">
-            <div>
-              <p className="text-3xl font-bold text-neutral-900">{Math.round(totals.calories)}</p>
-              <p className="text-sm text-neutral-500">of {Math.round(goals.dailyCalorieGoal)} kcal</p>
-            </div>
-            <div className="text-right">
-              <p
-                className={`text-xl font-semibold ${remaining < 0 ? "text-red-600" : "text-emerald-600"}`}
+        <div className="panel-dark animate-fade-in rounded-[32px] p-6 shadow-xl shadow-black/10">
+          <div className="flex items-center gap-6">
+            <ProgressRing
+              pct={caloriePct}
+              color={totals.calories > goals.dailyCalorieGoal ? "#f87171" : "#a3e635"}
+              trackColor="rgba(255,255,255,0.1)"
+            >
+              <div className="text-center">
+                <p className="text-3xl font-extrabold leading-none text-white">
+                  {Math.round(totals.calories)}
+                </p>
+                <p className="mt-1.5 text-[11px] text-white/40">of {Math.round(goals.dailyCalorieGoal)}</p>
+              </div>
+            </ProgressRing>
+
+            <div className="flex-1">
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  remaining < 0 ? "bg-red-400/15 text-red-300" : "bg-lime-400/15 text-lime-300"
+                }`}
               >
+                {remaining < 0 ? "over goal" : "remaining"}
+              </span>
+              <p className={`mt-2 text-3xl font-extrabold ${remaining < 0 ? "text-red-300" : "text-white"}`}>
                 {remaining < 0 ? `+${Math.abs(remaining)}` : remaining}
+                <span className="ml-1.5 text-sm font-medium text-white/40">kcal</span>
               </p>
-              <p className="text-sm text-neutral-500">{remaining < 0 ? "over" : "remaining"}</p>
             </div>
-          </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-neutral-100">
-            <div
-              className={`h-full rounded-full transition-all ${totals.calories > goals.dailyCalorieGoal ? "bg-red-500" : "bg-emerald-500"}`}
-              style={{ width: `${caloriePct}%` }}
-            />
           </div>
 
-          {/* Macros */}
-          <div className="mt-5 grid grid-cols-3 gap-3">
-            <MacroBar label="Protein" consumed={totals.protein} goal={goals.proteinGoalG} color="bg-sky-500" />
-            <MacroBar label="Carbs" consumed={totals.carbs} goal={goals.carbsGoalG} color="bg-amber-500" />
-            <MacroBar label="Fat" consumed={totals.fat} goal={goals.fatGoalG} color="bg-purple-500" />
+          <div className="mt-7 grid grid-cols-3 gap-4">
+            <MacroBar label="Protein" consumed={totals.protein} goal={goals.proteinGoalG} color="var(--macro-protein)" />
+            <MacroBar label="Carbs" consumed={totals.carbs} goal={goals.carbsGoalG} color="var(--macro-carbs)" />
+            <MacroBar label="Fat" consumed={totals.fat} goal={goals.fatGoalG} color="var(--macro-fat)" />
           </div>
         </div>
 
-        {/* Meals */}
-        <div className="mt-6 space-y-4">
-          {loading && <p className="text-center text-sm text-neutral-400">Loading...</p>}
+        {insight && (
+          <div className="animate-fade-in mt-4 flex items-start gap-3 rounded-3xl border border-lime-200/60 bg-white p-4 shadow-sm">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-lime-100 text-base">
+              ✨
+            </span>
+            <p className="flex-1 pt-1 text-sm leading-relaxed text-neutral-700">{insight}</p>
+            <button
+              onClick={refreshInsight}
+              disabled={insightLoading}
+              aria-label="Refresh insight"
+              title="Refresh insight"
+              className="mt-1 shrink-0 rounded-full p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 disabled:opacity-50"
+            >
+              {insightLoading ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600" />
+              ) : (
+                "↻"
+              )}
+            </button>
+          </div>
+        )}
+
+        <div className="mt-6 space-y-3">
           {MEALS.map((meal) => {
             const mealEntries = entries.filter((e) => e.mealType === meal.type);
             const mealCalories = mealEntries.reduce((sum, e) => sum + e.calories, 0);
 
             return (
-              <div key={meal.type} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+              <div
+                key={meal.type}
+                className="rounded-[28px] border border-neutral-200/70 bg-white p-4 shadow-sm transition hover:shadow-md"
+              >
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-neutral-900">{meal.label}</h3>
-                  <span className="text-sm text-neutral-400">{Math.round(mealCalories)} kcal</span>
+                  <h3 className="flex items-center gap-2.5 font-semibold text-neutral-900">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100 text-base">
+                      {meal.emoji}
+                    </span>
+                    {meal.label}
+                  </h3>
+                  <span className="text-sm font-medium text-neutral-400">{Math.round(mealCalories)} kcal</span>
                 </div>
 
                 {mealEntries.length > 0 && (
@@ -217,8 +326,8 @@ export function DashboardClient({
                 )}
 
                 <button
-                  onClick={() => setActiveMeal(meal.type)}
-                  className="mt-3 w-full rounded-lg border border-dashed border-neutral-300 py-1.5 text-sm font-medium text-neutral-500 hover:border-emerald-500 hover:text-emerald-600"
+                  onClick={() => openLogSheet(meal.type)}
+                  className="mt-3 w-full rounded-full border border-dashed border-neutral-300 py-2 text-sm font-medium text-neutral-500 transition hover:border-lime-500 hover:text-lime-700 hover:bg-lime-50"
                 >
                   + Add food
                 </button>
@@ -228,11 +337,13 @@ export function DashboardClient({
         </div>
       </main>
 
-      {activeMeal && (
-        <AddFoodModal
-          mealType={activeMeal}
+      <BottomNav onLog={() => openLogSheet()} />
+
+      {showLogSheet && (
+        <LogFoodSheet
           logDate={date}
-          onClose={() => setActiveMeal(null)}
+          defaultMeal={defaultMeal}
+          onClose={() => setShowLogSheet(false)}
           onAdded={handleAdded}
         />
       )}
@@ -254,14 +365,17 @@ function MacroBar({
   const pct = Math.min(100, (consumed / (goal || 1)) * 100);
   return (
     <div>
-      <div className="flex justify-between text-xs text-neutral-500">
+      <div className="flex justify-between text-xs text-white/50">
         <span>{label}</span>
-        <span>
+        <span className="text-white/70">
           {Math.round(consumed)}/{Math.round(goal)}g
         </span>
       </div>
-      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
       </div>
     </div>
   );

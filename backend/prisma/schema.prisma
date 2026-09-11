@@ -37,6 +37,7 @@ enum MealType {
 enum FoodSource {
   user
   seed
+  ai
 }
 
 model User {

@@ -20,6 +20,36 @@ logEntriesRouter.get("/", async (req, res) => {
   res.json(entries);
 });
 
+const summarySchema = z.object({
+  start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+logEntriesRouter.get("/summary", async (req, res) => {
+  const parsed = summarySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "start and end (YYYY-MM-DD) are required" });
+    return;
+  }
+  const { start, end } = parsed.data;
+
+  const grouped = await prisma.logEntry.groupBy({
+    by: ["logDate"],
+    where: { userId: req.userId, logDate: { gte: start, lte: end } },
+    _sum: { calories: true, proteinG: true, carbsG: true, fatG: true },
+  });
+
+  const days = grouped.map((g) => ({
+    logDate: g.logDate,
+    calories: g._sum.calories ?? 0,
+    proteinG: g._sum.proteinG ?? 0,
+    carbsG: g._sum.carbsG ?? 0,
+    fatG: g._sum.fatG ?? 0,
+  }));
+
+  res.json(days);
+});
+
 const createEntrySchema = z.object({
   foodItemId: z.string().min(1),
   logDate: z.string().min(1),
