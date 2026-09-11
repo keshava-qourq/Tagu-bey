@@ -22,20 +22,21 @@ Play Store release) can reuse the same backend API as-is.
 
 ## Stack
 
-- **Backend**: Express, Prisma ORM + SQLite (swap `DATABASE_URL`/the
-  `provider` in `schema.prisma` for Postgres to move to production — see
-  notes below), JWT auth stored in an httpOnly cookie, Zod for validation
+- **Backend**: Express, Prisma ORM + PostgreSQL, JWT auth stored in an
+  httpOnly cookie, Zod for validation
 - **Frontend**: Next.js (App Router) + TypeScript + Tailwind CSS, no
   server-side data fetching — pages call the backend client-side via
   `src/lib/api.ts`
 
 ## Getting started
 
-**Backend:**
+**Backend** (needs a local Postgres — e.g. `brew install postgresql@17 && brew services start postgresql@17 && createdb caloriess`):
 ```bash
 cd backend
 npm install
-npx prisma migrate dev   # creates the SQLite db + applies the schema
+# set DATABASE_URL in .env, e.g.
+#   postgresql://<your-macos-username>@localhost:5432/caloriess?schema=public
+npx prisma migrate dev   # applies the schema
 npx tsx prisma/seed.ts   # seeds ~30 common foods (Indian + Western)
 npm run dev              # http://localhost:4000
 ```
@@ -71,9 +72,36 @@ Open http://localhost:3000, sign up, complete onboarding, and start logging.
   results into `FoodItem`.
 - `LogEntry` snapshots calories/macros at the time of logging, so editing a
   `FoodItem` later won't retroactively change historical logs.
-- **Before deploying**: replace both `JWT_SECRET` (backend `.env`) and
-  switch `provider = "sqlite"` to `"postgresql"` in `schema.prisma` with a
-  hosted Postgres `DATABASE_URL` (e.g. Neon/Supabase) — SQLite's local file
-  won't survive on serverless hosts. Set the cookie's `sameSite`/`secure`
-  options in `backend/src/routes/auth.ts` for your production domain setup,
-  and point the frontend's `NEXT_PUBLIC_API_URL` at the deployed backend URL.
+
+## Deploying to Render
+
+`render.yaml` at the repo root is a [Render Blueprint](https://render.com/docs/blueprint-spec)
+that provisions everything: a Postgres database plus the backend and
+frontend as two separate web services.
+
+1. Push this repo to GitHub (Render deploys from a connected repo).
+2. In the Render dashboard: **New → Blueprint**, pick this repo. Render
+   reads `render.yaml` and creates `caloriess-db`, `caloriess-backend`, and
+   `caloriess-frontend`.
+3. Render will prompt for the env vars marked `sync: false` in `render.yaml`:
+   `GEMINI_API_KEY`, `TAVILY_API_KEY`, `SERPAPI_API_KEY` (same values as your
+   local `backend/.env`) — `DATABASE_URL` and `JWT_SECRET` are generated
+   automatically.
+4. Once both services have deployed once and you can see their public URLs
+   (`https://caloriess-backend-xxxx.onrender.com` and
+   `https://caloriess-frontend-xxxx.onrender.com`), set the two remaining
+   env vars by hand (Render Blueprints can't auto-fill a public URL between
+   services) and let them redeploy:
+   - On `caloriess-backend`: `FRONTEND_URL` = the frontend's URL
+   - On `caloriess-frontend`: `NEXT_PUBLIC_API_URL` = the backend's URL
+
+Notes specific to this deploy topology:
+- The backend's CORS in `src/index.ts` is wide-open to any `localhost:*`
+  origin in dev, but strictly locked to `FRONTEND_URL` when
+  `NODE_ENV=production` (set by the Blueprint).
+- The auth cookie's `sameSite` is `"none"` in production — required because
+  the two services live on different `*.onrender.com` subdomains (a
+  cross-site context for cookies), not just different ports like in dev.
+- Render's free Postgres tier is time-limited; check current terms in the
+  dashboard when you provision it, and upgrade the database plan before it
+  expires if you want to keep the deployment long-term.

@@ -44,7 +44,7 @@ foodItemsRouter.get("/", async (req, res) => {
 
   const items = await prisma.foodItem.findMany({
     where: {
-      name: { contains: query },
+      name: { contains: query, mode: "insensitive" },
       OR: [{ createdByUserId: req.userId }, { source: "seed" }],
     },
     take: 20,
