@@ -9,7 +9,10 @@ services:
     runtime: node
     plan: free
     rootDir: backend
-    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+    # --include=dev: Render's Node build installs with NODE_ENV=production,
+    # which skips devDependencies - but "typescript" (needed to compile) is
+    # a devDependency.
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -38,7 +41,9 @@ services:
     runtime: static
     plan: free
     rootDir: frontend
-    buildCommand: npm install && npm run build
+    # --include=dev: same reason as the backend - "typescript" and
+    # "@tailwindcss/postcss" are devDependencies needed to build.
+    buildCommand: npm install --include=dev && npm run build
     staticPublishPath: out
     envVars:
       # Set this once the backend service exists and you know its public URL
