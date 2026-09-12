@@ -35,13 +35,15 @@ services:
 
   - name: caloriess-frontend
     type: web
-    runtime: node
+    runtime: static
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
-    startCommand: npm start
+    staticPublishPath: out
     envVars:
       # Set this once the backend service exists and you know its public URL
-      # (e.g. https://caloriess-backend.onrender.com).
+      # (e.g. https://caloriess-backend.onrender.com). Build-time only for a
+      # static export - changing it later requires a manual redeploy, not
+      # just a restart, since NEXT_PUBLIC_* vars are baked in at build time.
       - key: NEXT_PUBLIC_API_URL
         sync: false

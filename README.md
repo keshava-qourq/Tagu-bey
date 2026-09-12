@@ -93,9 +93,16 @@ frontend as two separate web services.
    env vars by hand (Render Blueprints can't auto-fill a public URL between
    services) and let them redeploy:
    - On `caloriess-backend`: `FRONTEND_URL` = the frontend's URL
-   - On `caloriess-frontend`: `NEXT_PUBLIC_API_URL` = the backend's URL
+   - On `caloriess-frontend`: `NEXT_PUBLIC_API_URL` = the backend's URL. This
+     is baked in at build time (it's a static export), so this always
+     requires a manual redeploy, not just a restart.
 
 Notes specific to this deploy topology:
+- `caloriess-frontend` is a Render **Static Site** (`runtime: static`), not a
+  web service — the app has no server-side rendering, middleware, or route
+  handlers, so `next.config.ts` sets `output: "export"` and Render just
+  serves the prebuilt `out/` folder. This is free forever on Render with no
+  spin-down/cold-start, unlike the free web service plan.
 - The backend's CORS in `src/index.ts` is wide-open to any `localhost:*`
   origin in dev, but strictly locked to `FRONTEND_URL` when
   `NODE_ENV=production` (set by the Blueprint).
