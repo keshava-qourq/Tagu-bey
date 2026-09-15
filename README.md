@@ -76,39 +76,40 @@ Open http://localhost:3000, sign up, complete onboarding, and start logging.
 ## Deploying to Render
 
 `render.yaml` at the repo root is a [Render Blueprint](https://render.com/docs/blueprint-spec)
-that provisions everything: a Postgres database plus the backend and
-frontend as two separate web services.
+that provisions a Postgres database plus **one** web service, `caloriess`,
+serving both apps from the same origin.
 
 1. Push this repo to GitHub (Render deploys from a connected repo).
 2. In the Render dashboard: **New → Blueprint**, pick this repo. Render
-   reads `render.yaml` and creates `caloriess-db`, `caloriess-backend`, and
-   `caloriess-frontend`.
+   reads `render.yaml` and creates `caloriess-db` and `caloriess`.
 3. Render will prompt for the env vars marked `sync: false` in `render.yaml`:
    `GEMINI_API_KEY`, `TAVILY_API_KEY`, `SERPAPI_API_KEY` (same values as your
    local `backend/.env`) — `DATABASE_URL` and `JWT_SECRET` are generated
    automatically.
-4. Once both services have deployed once and you can see their public URLs
-   (`https://caloriess-backend-xxxx.onrender.com` and
-   `https://caloriess-frontend-xxxx.onrender.com`), set the two remaining
-   env vars by hand (Render Blueprints can't auto-fill a public URL between
-   services) and let them redeploy:
-   - On `caloriess-backend`: `FRONTEND_URL` = the frontend's URL
-   - On `caloriess-frontend`: `NEXT_PUBLIC_API_URL` = the backend's URL. This
-     is baked in at build time (it's a static export), so this always
-     requires a manual redeploy, not just a restart.
+4. Deploy and open the service's URL — no other setup needed. There's no
+   `FRONTEND_URL`/`NEXT_PUBLIC_API_URL` cross-referencing step, because
+   there's only one service and one URL.
 
-Notes specific to this deploy topology:
-- `caloriess-frontend` is a Render **Static Site** (`runtime: static`), not a
-  web service — the app has no server-side rendering, middleware, or route
-  handlers, so `next.config.ts` sets `output: "export"` and Render just
-  serves the prebuilt `out/` folder. This is free forever on Render with no
-  spin-down/cold-start, unlike the free web service plan.
-- The backend's CORS in `src/index.ts` is wide-open to any `localhost:*`
-  origin in dev, but strictly locked to `FRONTEND_URL` when
-  `NODE_ENV=production` (set by the Blueprint).
-- The auth cookie's `sameSite` is `"none"` in production — required because
-  the two services live on different `*.onrender.com` subdomains (a
-  cross-site context for cookies), not just different ports like in dev.
+Why one service instead of a frontend + backend split:
+- The build (see the `buildCommand` in `render.yaml`) builds the frontend as
+  a static export (`next.config.ts` sets `output: "export"`, since the app
+  has no SSR, middleware, or route handlers), then copies it into
+  `backend/public`. The backend (`src/index.ts`) serves those files directly
+  alongside its `/api/*` routes.
+- This makes the frontend and backend **same-origin** in production, so the
+  auth cookie is first-party. A split-service topology (frontend and
+  backend on two different `*.onrender.com` subdomains) requires a
+  cross-site cookie (`sameSite: "none"`), which Safari's Intelligent
+  Tracking Prevention blocks by default in every browsing mode (not just
+  Private Browsing), and which Chrome is also increasingly blocking by
+  default for a growing share of users as it phases out third-party
+  cookies. Same-origin sidesteps this entirely — the cookie is `sameSite:
+  "lax"` (see `src/routes/auth.ts`) and works everywhere.
+- The trade-off: this is a single free **Web Service** (spins down after
+  inactivity, ~30-60s cold start on the next request), rather than a free
+  **Static Site** (no spin-down) for the frontend half. Given the choice is
+  between an occasional cold start vs. login not working at all in Safari,
+  same-origin wins.
 - Render's free Postgres tier is time-limited; check current terms in the
   dashboard when you provision it, and upgrade the database plan before it
   expires if you want to keep the deployment long-term.

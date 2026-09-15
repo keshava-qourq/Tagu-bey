@@ -4,16 +4,24 @@ databases:
     user: caloriess
 
 services:
-  - name: caloriess-backend
+  - name: caloriess
     type: web
     runtime: node
     plan: free
-    rootDir: backend
-    # --include=dev: Render's Node build installs with NODE_ENV=production,
-    # which skips devDependencies - but "typescript" (needed to compile) is
-    # a devDependency.
-    buildCommand: npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
-    startCommand: npm start
+    rootDir: .
+    # Build the frontend's static export first (NEXT_PUBLIC_API_URL="" makes
+    # it call the API with relative paths, since it's served from the same
+    # origin as the backend in this topology), then copy it into
+    # backend/public so the backend can serve it - see src/index.ts.
+    # --include=dev on both: Render's Node build installs with
+    # NODE_ENV=production, which skips devDependencies - but "typescript"
+    # (both apps) and "@tailwindcss/postcss" (frontend) are devDependencies
+    # needed to build.
+    buildCommand: >-
+      cd frontend && npm install --include=dev && NEXT_PUBLIC_API_URL= npm run build && cd ../backend &&
+      npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build &&
+      mkdir -p public && cp -r ../frontend/out/. public/
+    startCommand: cd backend && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -24,31 +32,9 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      # Set this once the frontend service exists and you know its public URL
-      # (e.g. https://caloriess-frontend.onrender.com) - Render Blueprints
-      # can't auto-fill a public HTTPS URL for cross-service references.
-      - key: FRONTEND_URL
-        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: TAVILY_API_KEY
         sync: false
       - key: SERPAPI_API_KEY
-        sync: false
-
-  - name: caloriess-frontend
-    type: web
-    runtime: static
-    plan: free
-    rootDir: frontend
-    # --include=dev: same reason as the backend - "typescript" and
-    # "@tailwindcss/postcss" are devDependencies needed to build.
-    buildCommand: npm install --include=dev && npm run build
-    staticPublishPath: out
-    envVars:
-      # Set this once the backend service exists and you know its public URL
-      # (e.g. https://caloriess-backend.onrender.com). Build-time only for a
-      # static export - changing it later requires a manual redeploy, not
-      # just a restart, since NEXT_PUBLIC_* vars are baked in at build time.
-      - key: NEXT_PUBLIC_API_URL
         sync: false

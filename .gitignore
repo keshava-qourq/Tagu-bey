@@ -7,6 +7,7 @@ out/
 
 # backend build output
 backend/dist/
+backend/public/
 
 # sqlite db files (local dev only)
 *.db
